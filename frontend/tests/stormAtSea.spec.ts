@@ -70,11 +70,6 @@ test.describe("storm at sea (forum phase)", () => {
     await expect(
       dialog.getByText("Select exactly 2 Roman fleets to eliminate."),
     ).toBeVisible()
-    await expect(
-      dialog.getByText(
-        /Provincial fleets belong to the provincial wars advanced rule/,
-      ),
-    ).toBeVisible()
     await expect(dialog.getByRole("group", { name: "Reserve" })).toBeVisible()
     await expect(
       dialog.getByRole("button", { name: "Clear", exact: true }),

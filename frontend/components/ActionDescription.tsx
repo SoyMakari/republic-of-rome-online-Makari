@@ -1,5 +1,6 @@
 import { ContextField } from "@/classes/AvailableAction"
 import Accordion from "@/components/Accordion"
+import { pluralize } from "@/helpers/text"
 
 const factionLeaderDescription = (
   <p>Your faction leader will be immune from persuasion attempts.</p>
@@ -271,18 +272,11 @@ const ActionDescription = ({ actionName, context }: ActionDescriptionProps) => {
     return <p>Steal a random unplayed card from an opponent&apos;s hand.</p>
   }
   if (actionName === "Resolve storm at sea") {
-    const fleetNoun = context.fleet_losses === 1 ? "fleet" : "fleets"
     return (
-      <>
-        <p>
-          Select exactly {context.fleet_losses} Roman {fleetNoun} to eliminate.
-        </p>
-        <p className="text-sm text-neutral-600">
-          This implementation covers only the basic game. Provincial fleets
-          belong to the provincial wars advanced rule (§2.02) and are outside
-          its scope. All fleets shown here are Roman fleets.
-        </p>
-      </>
+      <p>
+        Select exactly {pluralize(Number(context.fleet_losses), "Roman fleet")}{" "}
+        to eliminate.
+      </p>
     )
   }
   return null

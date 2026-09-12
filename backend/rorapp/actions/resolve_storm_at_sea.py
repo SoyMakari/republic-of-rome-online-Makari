@@ -10,7 +10,7 @@ from rorapp.helpers.storm_at_sea import (
     clear_storm_at_sea_decision,
     destroy_storm_fleets,
 )
-from rorapp.helpers.text import possessive
+from rorapp.helpers.text import pluralize, to_sentence_case
 from rorapp.models import AvailableAction, Faction, Fleet, Game, Senator
 
 
@@ -51,23 +51,12 @@ class ResolveStormAtSeaAction(ActionBase):
             return []
 
         campaigns = {campaign.id: campaign for campaign in snapshot.campaigns}
-        senators = {senator.id: senator for senator in snapshot.senators}
-        wars = {war.id: war for war in snapshot.wars}
 
         def campaign_group(campaign_id: int) -> str:
             campaign = campaigns[campaign_id]
-            commander = (
-                senators.get(campaign.commander_id)
-                if campaign.commander_id is not None
-                else None
+            return (
+                f"{to_sentence_case(campaign.display_name)} — {campaign.war.name}"
             )
-            war = wars[campaign.war_id]
-            campaign_name = (
-                f"{possessive(commander.display_name)} campaign"
-                if commander
-                else "Uncommanded campaign"
-            )
-            return f"{campaign_name} — {war.name}"
 
         fleets = sorted(
             snapshot.fleets,
@@ -79,7 +68,8 @@ class ResolveStormAtSeaAction(ActionBase):
         options = [
             {
                 "value": fleet.id,
-                "name": f"Fleet {fleet.name}",
+                "object_class": "fleet",
+                "id": fleet.id,
                 "group": (
                     "Reserve"
                     if fleet.campaign_id is None
@@ -117,26 +107,7 @@ class ResolveStormAtSeaAction(ActionBase):
         random_resolver: RandomResolver,
     ) -> ExecutionResult:
         game = Game.objects.get(id=game_id)
-        faction = Faction.objects.get(game=game, id=faction_id)
         required_count = game.storm_at_sea_fleet_losses
-
-        if (
-            game.phase != Game.Phase.FORUM
-            or game.sub_phase != Game.SubPhase.STORM_AT_SEA
-            or required_count < 1
-            or not faction.has_status_item(FactionStatusItem.AWAITING_DECISION)
-        ):
-            return ExecutionResult(False, "No storm at sea decision is pending.")
-
-        hrao_exists = Senator.objects.filter(
-            game=game,
-            faction=faction,
-            alive=True,
-            location="Rome",
-            titles__contains=[Senator.Title.HRAO.value],
-        ).exists()
-        if not hrao_exists:
-            return ExecutionResult(False, "Only the HRAO faction may resolve this event.")
 
         selected_ids = selection.get(self.FLEETS_FIELD)
         if not isinstance(selected_ids, list):
@@ -157,9 +128,9 @@ class ResolveStormAtSeaAction(ActionBase):
             return ExecutionResult(False, "Invalid Roman fleet selection.")
 
         if len(fleet_ids) != required_count or len(set(fleet_ids)) != required_count:
-            fleet_noun = "fleet" if required_count == 1 else "fleets"
             return ExecutionResult(
-                False, f"Select exactly {required_count} Roman {fleet_noun}."
+                False,
+                f"Select exactly {pluralize(required_count, 'Roman fleet')}.",
             )
 
         fleets = list(Fleet.objects.filter(game=game, id__in=fleet_ids))
