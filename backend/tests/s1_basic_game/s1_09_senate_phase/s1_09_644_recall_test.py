@@ -1,5 +1,6 @@
 from typing import List
 import pytest
+from rorapp.actions.propose_replacing_proconsul import ProposeReplacingProconsulAction
 from rorapp.classes.faction_status_item import FactionStatusItem
 from rorapp.classes.random_resolver import FakeRandomResolver
 from rorapp.models import AvailableAction, Campaign, Fleet, Game, Legion, Senator, War
@@ -272,3 +273,42 @@ def test_senate_ends_when_presiding_magistrate_replaces_proconsul(
     assert game.phase != Game.Phase.SENATE
     assert not presiding_magistrate.has_title(Senator.Title.PRESIDING_MAGISTRATE)
     assert not presiding_magistrate.has_title(Senator.Title.HRAO)
+
+
+@pytest.mark.django_db
+def test_replacement_below_enemy_strength_requires_incoming_commander_consent(
+    senate_game: Game, resolver: FakeRandomResolver
+):
+    # Arrange
+    game = senate_game
+    proconsul, field_consul, war = _setup_replace(game)
+    proconsul.add_title(Senator.Title.PRIOR_CONSUL)
+    proconsul.save()
+    campaign = Campaign.objects.create(
+        game=game,
+        war=war,
+        commander=proconsul,
+        recently_deployed=False,
+        recently_reinforced=False,
+    )
+    Legion.objects.create(game=game, number=1, campaign=campaign)
+    for i in range(1, 6):
+        Fleet.objects.create(game=game, number=i, campaign=campaign)
+    faction = field_consul.faction
+    assert faction is not None
+
+    # Act
+    result = ProposeReplacingProconsulAction().execute(
+        game_id=game.id,
+        faction_id=faction.id,
+        selection={
+            "Campaign": str(campaign.id),
+            "Replacement commander": str(field_consul.id),
+        },
+        random_resolver=resolver,
+    )
+
+    # Assert
+    assert result.success
+    field_consul.refresh_from_db()
+    assert field_consul.has_status_item(Senator.StatusItem.CONSENT_REQUIRED)
