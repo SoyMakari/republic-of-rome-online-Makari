@@ -1,6 +1,7 @@
 import pytest
 from rorapp.classes.random_resolver import FakeRandomResolver
 from rorapp.models import Campaign, Game, Legion, Senator, War
+from rorapp.models.fleet import Fleet
 from rorapp.effects.meta.effect_executor import execute_effects_and_manage_actions
 
 
@@ -172,3 +173,61 @@ def test_two_matching_active_wars_double_naval_strength(basic_game: Game):
     assert War.objects.filter(
         game=game, name="1st Punic War", naval_strength=3
     ).exists()
+
+
+@pytest.mark.django_db
+def test_later_matching_war_remains_active_without_earlier_war_prosecution(
+    basic_game: Game, resolver: FakeRandomResolver
+):
+    # Arrange
+    game = basic_game
+    game.phase = Game.Phase.COMBAT
+    game.sub_phase = Game.SubPhase.START
+    game.save()
+    War.objects.create(
+        game=game,
+        name="1st Illyrian War",
+        series_name="Illyrian",
+        index=0,
+        land_strength=5,
+        fleet_support=3,
+        naval_strength=0,
+        disaster_numbers=[5],
+        standoff_numbers=[17],
+        spoils=10,
+        famine=True,
+        location="Illyricum",
+        status=War.Status.ACTIVE,
+    )
+    later_war = War.objects.create(
+        game=game,
+        name="2nd Illyrian War",
+        series_name="Illyrian",
+        index=1,
+        land_strength=4,
+        fleet_support=2,
+        naval_strength=0,
+        disaster_numbers=[5],
+        standoff_numbers=[17],
+        spoils=10,
+        famine=True,
+        location="Illyricum",
+        status=War.Status.ACTIVE,
+    )
+    commander = Senator.objects.get(game=game, family_name="Cornelius")
+    commander.add_title(Senator.Title.FIELD_CONSUL)
+    commander.location = later_war.location
+    commander.save()
+    campaign = Campaign.objects.create(game=game, war=later_war, commander=commander)
+    for i in range(1, 11):
+        Legion.objects.create(game=game, number=i, campaign=campaign)
+    for i in range(1, 3):
+        Fleet.objects.create(game=game, number=i, campaign=campaign)
+    resolver.dice_rolls = [12]
+
+    # Act
+    execute_effects_and_manage_actions(game.id, resolver)
+
+    # Assert
+    later_war.refresh_from_db()
+    assert later_war.status == War.Status.ACTIVE
