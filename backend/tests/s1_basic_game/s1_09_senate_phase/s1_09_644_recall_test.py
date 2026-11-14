@@ -209,3 +209,66 @@ def test_replace_proconsul_not_available_when_commander_is_not_proconsul(senate_
     # Assert
     action_names = [a.base_name for a in AvailableAction.objects.filter(game=game)]
     assert "Propose replacing proconsul" not in action_names
+
+
+@pytest.mark.django_db
+def test_senate_ends_when_presiding_magistrate_replaces_proconsul(
+    proconsul_campaign: Game, resolver: FakeRandomResolver
+):
+    # Arrange
+    game = proconsul_campaign
+    campaign = Campaign.objects.get(game=game)
+    proconsul = Senator.objects.get(game=game, family_name="Julius")
+    proconsul.add_title(Senator.Title.PRIOR_CONSUL)
+    proconsul.save()
+    presiding_magistrate = Senator.objects.get(game=game, family_name="Cornelius")
+    for i in range(1, 11):
+        Legion.objects.create(game=game, number=i, campaign=campaign)
+    for i in range(1, 6):
+        Fleet.objects.create(game=game, number=i, campaign=campaign)
+
+    field_consul = Senator.objects.get(game=game, family_name="Fabius")
+    field_consul.add_title(Senator.Title.FIELD_CONSUL)
+    field_consul.location = "Illyricum"
+    field_consul.save()
+    war = War.objects.create(
+        game=game,
+        name="1st Illyrian War",
+        series_name="Illyrian",
+        index=0,
+        land_strength=5,
+        fleet_support=3,
+        naval_strength=0,
+        disaster_numbers=[5],
+        standoff_numbers=[17],
+        spoils=10,
+        famine=True,
+        location="Illyricum",
+        status=War.Status.ACTIVE,
+    )
+    field_campaign = Campaign.objects.create(game=game, war=war, commander=field_consul)
+    for i in range(11, 17):
+        Legion.objects.create(game=game, number=i, campaign=field_campaign)
+    for i in range(6, 9):
+        Fleet.objects.create(game=game, number=i, campaign=field_campaign)
+
+    game.current_proposal = (
+        f"Replace {proconsul.display_name} with {presiding_magistrate.display_name} "
+        f"in the {campaign.war.name}"
+    )
+    game.votes_yea = 15
+    game.save()
+    for faction in game.factions.all():
+        faction.add_status_item(FactionStatusItem.DONE)
+        faction.save()
+    resolver.dice_rolls = [18, 18]
+
+    # Act
+    execute_effects_and_manage_actions(game.id, resolver)
+
+    # Assert
+    game.refresh_from_db()
+    presiding_magistrate.refresh_from_db()
+    assert game.phase != Game.Phase.SENATE
+    assert not presiding_magistrate.has_title(Senator.Title.PRESIDING_MAGISTRATE)
+    assert not presiding_magistrate.has_title(Senator.Title.HRAO)
