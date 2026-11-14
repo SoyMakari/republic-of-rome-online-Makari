@@ -94,3 +94,64 @@ def test_recall_below_minimum_sets_consent_required(proconsul_campaign: Game, re
     assert result.success
     proconsul.refresh_from_db()
     assert proconsul.has_status_item(Senator.StatusItem.CONSENT_REQUIRED)
+
+
+@pytest.mark.django_db
+def test_deployment_below_active_matching_war_strength_requires_consent(
+    senate_game: Game, resolver: FakeRandomResolver
+):
+    # Arrange
+    game = senate_game
+    field_consul = Senator.objects.get(game=game, family_name="Fabius")
+    field_consul.add_title(Senator.Title.FIELD_CONSUL)
+    field_consul.save()
+    legions = [Legion.objects.create(game=game, number=i) for i in range(1, 7)]
+    fleets = [Fleet.objects.create(game=game, number=i) for i in range(1, 6)]
+    war = War.objects.create(
+        game=game,
+        name="1st Punic War",
+        series_name="Punic",
+        index=0,
+        land_strength=10,
+        fleet_support=5,
+        naval_strength=0,
+        disaster_numbers=[13],
+        standoff_numbers=[11, 14],
+        spoils=35,
+        location="Sicilia",
+        status=War.Status.ACTIVE,
+    )
+    War.objects.create(
+        game=game,
+        name="2nd Punic War",
+        series_name="Punic",
+        index=1,
+        land_strength=15,
+        fleet_support=5,
+        naval_strength=0,
+        disaster_numbers=[10],
+        standoff_numbers=[11, 15],
+        spoils=25,
+        location="Italia",
+        status=War.Status.ACTIVE,
+    )
+    faction = field_consul.faction
+    assert faction is not None
+
+    # Act
+    result = ProposeDeployingForcesAction().execute(
+        game_id=game.id,
+        faction_id=faction.id,
+        selection={
+            "Commander": str(field_consul.id),
+            "Target war": str(war.id),
+            "Legions": [str(l.id) for l in legions],
+            "Fleets": [str(f.id) for f in fleets],
+        },
+        random_resolver=resolver,
+    )
+
+    # Assert
+    assert result.success
+    field_consul.refresh_from_db()
+    assert field_consul.has_status_item(Senator.StatusItem.CONSENT_REQUIRED)
